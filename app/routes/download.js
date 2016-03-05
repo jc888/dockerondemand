@@ -5,12 +5,12 @@ var hl = require('highland');
 var Docker = require('dockerode');
 var fs = require('fs');
 var R = require('ramda');
+var Promise = require('bluebird');
 
 var docker = new Docker({
 	socketPath: '/var/run/docker.sock'
 });
 
-var output = hl();
 var pull = hl.wrapCallback(docker.pull.bind(docker));
 var pulled = null;
 
@@ -19,29 +19,47 @@ router.get('/', function(req, res) {
 		.flatMap(() => {
 			if (!pulled) {
 				pulled = [
-					pull('axeclbr/git')
+					pull('axeclbr/git'),
+					pull('docker')
 				];
 			}
 			return hl.merge(pulled)
 				.collect();
 		})
 		.flatMap(() => {
-			return hl((push, next) => {
-				docker.run('axeclbr/git', ['clone', 'https://github.com/docker-library/hello-world.git'], output, function(err, data, container) {
-					if (err) {
-						push(err, null);
-					} else {
-						push(null, [data, container]);
-					}
-					push(null, hl.nil);
-				});
+			return hl.wrapCallback(docker.createContainer.bind(docker))({
+				Image: "ubuntu",
+				Cmd: ["/bin/bash"],
+				"Volumes": {
+					"/src": {}
+				}
 			})
 		})
-		.map(R.last)
-		.map(R.prop('id'))
-		.tap(console.log)
-		.flatMap((data) => output)
-		.collect()
+		.flatMap((holder) => {
+			var output = hl();
+			var run = new Promise((resolve, reject) => {
+					docker.run("axeclbr/git", ["clone", "https://github.com/docker-library/hello-world.git", "/src"], output, {
+						"VolumesFrom": [holder.id]
+					}, (err, data, container) => {
+						if (err) {
+							reject(err);
+						}
+						resolve([data, container]);
+					})
+				})
+				.spread((data, container) => {
+					var ref = docker.getContainer(container.id);
+					return Promise.promisify(ref.remove, {
+						context: ref
+					})();
+				})
+
+			return hl(run)
+				.flatMap(() => output)
+				.collect()
+				.tap(console.log)
+				.map(() => holder)
+		})
 		.apply((data) => res.send(data))
 });
 
