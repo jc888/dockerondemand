@@ -12,18 +12,16 @@ var docker = new Docker({
 });
 
 var pull = hl.wrapCallback(docker.pull.bind(docker));
-var pulled = null;
 
 router.get('/', function(req, res) {
 	hl([null])
 		.flatMap(() => {
-			if (!pulled) {
-				pulled = [
+
+			return hl([
 					pull('axeclbr/git'),
-					pull('docker')
-				];
-			}
-			return hl.merge(pulled)
+					pull('docker:latest')
+				])
+				.merge()
 				.collect();
 		})
 		.flatMap(() => {
@@ -40,6 +38,36 @@ router.get('/', function(req, res) {
 			var run = new Promise((resolve, reject) => {
 					docker.run("axeclbr/git", ["clone", "https://github.com/docker-library/hello-world.git", "/src"], output, {
 						"VolumesFrom": [holder.id]
+					}, (err, data, container) => {
+						if (err) {
+							reject(err);
+						}
+						resolve([data, container]);
+					})
+				})
+				.spread((data, container) => {
+					var ref = docker.getContainer(container.id);
+					return Promise.promisify(ref.remove, {
+						context: ref
+					})();
+				})
+
+			return hl(run)
+				.flatMap(() => output)
+				.collect()
+				.tap(console.log)
+				.map(() => holder)
+		})
+		.flatMap((holder) => {
+			var output = hl();
+			var run = new Promise((resolve, reject) => {
+					docker.run("docker", ["build", "--rm", "-t", "helloworld", "/src"], output, {
+						"HostConfig": {
+							"Binds": [
+								"/var/run/docker.sock:/var/run/docker.sock"
+							],
+							"VolumesFrom": [holder.id]
+						}
 					}, (err, data, container) => {
 						if (err) {
 							reject(err);

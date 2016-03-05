@@ -7,12 +7,27 @@ var sinon = require('sinon');
 var request = require('supertest');
 
 describe('Component tests docker on demand', function() {
-	this.timeout(3000);
+	this.timeout(6000);
 
-	before((done)=>{
+	before((done) => {
 		Promise.delay(500)
 			.then(done);
 	})
+
+	describe('download an image', function() {
+
+		it('should download an image from a place', (done) => {
+			request('http://127.0.0.1:3000')
+				.get('/download')
+				.expect(200)
+				.end((err, res) => {
+					console.log(res.body);
+					(!!err) ? done(err): done();
+				});
+		});
+
+	});
+
 	describe('run an image', function() {
 
 		it('should run image', (done) => {
@@ -20,18 +35,18 @@ describe('Component tests docker on demand', function() {
 				.get('/invoke')
 				.expect(200)
 				.end((err, res) => {
-					expect(res.text).to.be.equal('moo\n');
+					console.log(res.body);
 					(!!err) ? done(err): done();
 				});
 		});
 
 	});
 
-	describe('download an image', function() {
+	describe('run an image', function() {
 
-		it('should download an image from a place', (done) => {
+		it('should run image', (done) => {
 			request('http://127.0.0.1:3000')
-				.get('/download')
+				.get('/invoke')
 				.expect(200)
 				.end((err, res) => {
 					console.log(res.body);
