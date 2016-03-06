@@ -14,11 +14,14 @@ describe('Component tests docker on demand', function() {
 			.then(done);
 	})
 
-	describe('download an image', function() {
+	describe('build an image', function() {
 
 		it('should download an image from a place', (done) => {
 			request('http://127.0.0.1:3000')
-				.get('/download')
+				.get('/build/helloworld')
+				.query({
+					url:"https://github.com/docker-library/hello-world.git"
+				})
 				.expect(200)
 				.end((err, res) => {
 					console.log(res.body);
@@ -32,7 +35,7 @@ describe('Component tests docker on demand', function() {
 
 		it('should run image', (done) => {
 			request('http://127.0.0.1:3000')
-				.get('/invoke')
+				.get('/run/helloworld')
 				.expect(200)
 				.end((err, res) => {
 					console.log(res.body);
@@ -46,7 +49,7 @@ describe('Component tests docker on demand', function() {
 
 		it('should run image', (done) => {
 			request('http://127.0.0.1:3000')
-				.get('/invoke')
+				.get('/run/helloworld')
 				.expect(200)
 				.end((err, res) => {
 					console.log(res.body);

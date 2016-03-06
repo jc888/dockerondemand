@@ -1,24 +1,118 @@
 var express = require('express');
 var router = express.Router();
+var spawn = require('child_process').spawn;
 var hl = require('highland');
+var Docker = require('dockerode');
+var fs = require('fs');
+var R = require('ramda');
+var Promise = require('bluebird');
+var Joi = require('joi');
 
-const spawn = require('child_process').spawn;
+var docker = new Docker({
+	socketPath: '/var/run/docker.sock'
+});
 
-router.get('/', function(req, res) {
+function pull(name) {
 
-	var cmd = spawn('docker', ['run', 'ubuntu', '-d']);
-	var outs = hl();
+	var w = hl.wrapCallback(docker.pull.bind(docker));
+	return w(name)
+		.flatMap((stream) => {
+			return hl(stream);
+		})
+		.collect();
+}
 
-	cmd.stdout.on('data', (data) => {
-		console.log(data.toString());
-		outs.write(data.toString());
-	});
+var prepImages = new Promise((resolve, reject) => {
 
-	cmd.on('close', (sig) => {
-		outs.end();
-	});
+	hl.merge([pull("ubuntu:latest"), pull("docker:latest"), pull("axeclbr/git")])
+		.collect()
+		.apply((data) => {
+			resolve(data);
+		})
+})
 
-	outs.pipe(res);
+router.get('/:containername', function(req, res) {
+
+	var downloadStream = hl();
+	var buildStream = hl();
+	hl.merge([downloadStream, buildStream])
+		.pipe(res);
+
+	hl([null])
+		.flatMap(() => {
+			console.log(req.query)
+			return hl.wrapCallback(Joi.validate)(req.query, {
+				url: Joi.string().required()
+			}, {
+				presence: "required"
+			})
+		})
+		.flatMap(() => {
+			return hl.wrapCallback(Joi.validate)(req.params, {
+				containername: Joi.string().required()
+			})
+		})
+		.flatMap(() => {
+			return hl(prepImages);
+		})
+		.flatMap(() => {
+			return hl.wrapCallback(docker.createContainer.bind(docker))({
+				Image: "ubuntu",
+				Cmd: ["/bin/bash"],
+				"Volumes": {
+					"/src": {}
+				}
+			})
+		})
+		.flatMap((holder) => {
+
+			var run = new Promise((resolve, reject) => {
+					docker.run("axeclbr/git", ["clone", req.query.url, "/src"], downloadStream, {
+						"VolumesFrom": [holder.id]
+					}, (err, data, container) => {
+						if (err) {
+							reject(err);
+						}
+						resolve([data, container]);
+					})
+				})
+				.spread((data, container) => {
+					var ref = docker.getContainer(container.id);
+					return Promise.promisify(ref.remove, {
+						context: ref
+					})();
+				})
+
+			return hl(run)
+				.map(() => holder)
+		})
+		.flatMap((holder) => {
+
+			var run = new Promise((resolve, reject) => {
+					docker.run("docker", ["build", "--rm", "-t", req.params.containername, "/src"], buildStream, {
+						"HostConfig": {
+							"Binds": [
+								"/var/run/docker.sock:/var/run/docker.sock"
+							],
+							"VolumesFrom": [holder.id]
+						}
+					}, (err, data, container) => {
+						if (err) {
+							reject(err);
+						}
+						resolve([data, container]);
+					})
+				})
+				.spread((data, container) => {
+					var ref = docker.getContainer(container.id);
+					return Promise.promisify(ref.remove, {
+						context: ref
+					})();
+				})
+
+			return hl(run);
+		})
+		.apply(() => {})
 });
 
 module.exports = router;
