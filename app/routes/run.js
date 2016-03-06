@@ -12,35 +12,41 @@ var docker = new Docker({
 	socketPath: '/var/run/docker.sock'
 });
 
-/* GET home page. */
+var JoiS = hl.streamifyAll(Joi);
+
+function runAndRemove() {
+	var args = Array.prototype.slice.call(arguments);
+	var run = new Promise((resolve, reject) => {
+
+			args.push((err, data, container) => {
+				if (err) {
+					reject(err);
+				}
+				resolve([data, container]);
+			});
+
+			docker.run.apply(docker, args);
+
+			return null;
+		})
+		.spread((data, container) => {
+			var ref = docker.getContainer(container.id);
+			return Promise.promisify(ref.remove, {
+				context: ref
+			})();
+		})
+
+	return hl(run);
+}
+
 router.get('/:name', function(req, res) {
 	var output = hl();
-
 	output.pipe(res);
-	hl([null])
-		.flatMap(() => {
-			return hl.wrapCallback(Joi.validate)(req.params, {
-				name: Joi.string().required()
-			})
-		})
-		.flatMap(() => {
-			var run = new Promise((resolve, reject) => {
-					docker.run(req.params.name, [], output, (err, data, container) => {
-						if (err) {
-							reject(err);
-						}
-						resolve([data, container]);
-					})
-				})
-				.spread((data, container) => {
-					var ref = docker.getContainer(container.id);
-					return Promise.promisify(ref.remove, {
-						context: ref
-					})();
-				})
 
-			return hl(run);
+	JoiS.validateStream(req.params, {
+			name: Joi.string().required()
 		})
+		.flatMap(() => runAndRemove(req.params.name, [], output))
 		.apply(() => {})
 
 });
