@@ -8,6 +8,6 @@ services:
       - "./app/routes:/src/routes"
       - "/var/run/docker.sock:/var/run/docker.sock"
     ports:
-      - "3000:3000"
+      - "8080:8080"
   gitlab:
     image: gitlab/gitlab-ce
