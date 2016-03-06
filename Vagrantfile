@@ -66,6 +66,6 @@ Vagrant.configure(2) do |config|
   # documentation for more information about their specific syntax and use.
   
   config.vm.provision "shell", inline: <<-SHELL
-    echo "alias startup='cd /vagrant && docker-compose up -d'" >> /home/vagrant/.bashrc
+    echo "alias startup='cd /vagrant && docker-compose up'" >> /home/vagrant/.bashrc
   SHELL
 end
